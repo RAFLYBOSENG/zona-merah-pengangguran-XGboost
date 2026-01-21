@@ -155,7 +155,7 @@ def grid_search_params(time_hours: np.ndarray,
 # ============================
 
 @st.cache_data
-def fetch_bmkg_forecast(adm4: str = "32.04.29.2001") -> pd.DataFrame | None:
+def fetch_bmkg_forecast(adm4: str = "32.04.29.2009") -> pd.DataFrame | None:
     """
     Mengambil prakiraan cuaca BMKG untuk kode adm4 tertentu
     dan mengubahnya menjadi DataFrame yang relatif flat.
@@ -213,7 +213,7 @@ def main():
         - Model **ODE kontinu** untuk intensitas cahaya (lux)
         - Penyelesaian numerik dengan **Runge–Kutta Orde 4 (RK4)**
         - Data utama: **sensor IoT (lux.csv)**
-        - Data tambahan: **prakiraan cuaca BMKG (Kab. Bandung, adm4=32.04.29.2001)**
+        - Data tambahan: **prakiraan cuaca BMKG (Des. Sagaracipta, adm4=32.04.29.2009)**
         """
     )
 
@@ -330,6 +330,7 @@ def main():
     L0 = lux_data[0]
     lux_sim_ext = simulate_lux(time_hours_ext, L0, k, A, C, phi)
     lux_eq_ext = L_eq(time_hours_ext, A, C, phi)
+    lux_sim_on_data = lux_sim_ext[: len(lux_data)]
 
     # Bangun df_sim extended
     time0 = df["time"].iloc[0]
@@ -349,13 +350,16 @@ def main():
     # Mask bagian yang punya data riil
     mask_have_data = ~np.isnan(df_sim["lux_data"].values)
 
-    mse_total = mse(df_sim["lux_data"][mask_have_data], df_sim["lux_sim"][mask_have_data])
-    rmse_total = rmse(df_sim["lux_data"][mask_have_data], df_sim["lux_sim"][mask_have_data])
-    r2_total = r2_score(df_sim["lux_data"][mask_have_data], df_sim["lux_sim"][mask_have_data])
+    mse_total = mse(df_sim["lux_data"][mask_have_data],
+                    df_sim["lux_sim"][mask_have_data])
+    rmse_total = rmse(df_sim["lux_data"][mask_have_data],
+                      df_sim["lux_sim"][mask_have_data])
+    r2_total = r2_score(df_sim["lux_data"][mask_have_data],
+                        df_sim["lux_sim"][mask_have_data])
 
-    # Train/test metric pakai indeks asli
-    mse_train = mse(lux_data[train_mask], lux_sim_ext[train_mask])
-    mse_test = mse(lux_data[test_mask], lux_sim_ext[test_mask])
+    # Train/test metric pakai hanya bagian simulasi yang sejajar dengan data (tanpa future)
+    mse_train = mse(lux_data[train_mask], lux_sim_on_data[train_mask])
+    mse_test = mse(lux_data[test_mask], lux_sim_on_data[test_mask])
 
     # --- METRIK DI ATAS ---
     col1, col2, col3, col4 = st.columns(4)
@@ -378,11 +382,13 @@ def main():
         )
 
     # --- FETCH BMKG ---
-    df_bmkg = fetch_bmkg_forecast("32.04.29.2001")
+    # Des. Sagaracipta, Kab. Bandung
+    df_bmkg = fetch_bmkg_forecast("32.04.29.2009")
 
     # --- TAB: SIMULASI | EDA LUX | BMKG | RESIDUAL ---
     tab_sim, tab_eda, tab_bmkg, tab_res = st.tabs(
-        ["🔮 Simulasi & Prediksi", "📊 EDA Data Lux", "🌦️ Data BMKG", "📉 Residual & Download"]
+        ["🔮 Simulasi & Prediksi", "📊 EDA Data Lux",
+            "🌦️ Data BMKG", "📉 Residual & Download"]
     )
 
     # ==================================
@@ -392,7 +398,8 @@ def main():
         st.subheader("Perbandingan Data Riil vs Simulasi (termasuk prediksi)")
 
         fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(df_sim["time"], df_sim["lux_sim"], label="Simulasi ODE (RK4)", linestyle="--")
+        ax.plot(df_sim["time"], df_sim["lux_sim"],
+                label="Simulasi ODE (RK4)", linestyle="--")
 
         # Plot bagian data riil (yang bukan NaN)
         ax.plot(df["time"], df["lux"], label="Data riil (lux)")
@@ -463,7 +470,8 @@ def main():
             label = str(d)
             alpha = 1.0 if d == date_to_highlight else 0.3
             lw = 2.0 if d == date_to_highlight else 1.0
-            ax4.plot(sub["hour"], sub["lux"], label=label, alpha=alpha, linewidth=lw)
+            ax4.plot(sub["hour"], sub["lux"], label=label,
+                     alpha=alpha, linewidth=lw)
 
         ax4.set_xlabel("Jam (lokal)")
         ax4.set_ylabel("Lux")
@@ -476,17 +484,20 @@ def main():
     # TAB 3: BMKG
     # ==================================
     with tab_bmkg:
-        st.subheader("Prakiraan Cuaca BMKG - Kab. Bandung (adm4=32.04.29.2001)")
+        st.subheader(
+            "Prakiraan Cuaca BMKG - Des. Sagaracipta (adm4=32.04.29.2009)")
 
         if df_bmkg is None or df_bmkg.empty:
             st.warning("Data BMKG tidak tersedia atau gagal diambil.")
         else:
             # Tampilkan beberapa kolom penting
-            cols_show = [c for c in ["local_datetime", "t", "hu", "tcc", "tp", "weather_desc"] if c in df_bmkg.columns]
+            cols_show = [c for c in ["local_datetime", "t", "hu",
+                                     "tcc", "tp", "weather_desc"] if c in df_bmkg.columns]
             st.write(df_bmkg[cols_show].head())
 
             st.markdown("---")
-            st.subheader("Time Series Suhu, Tutupan Awan, dan Curah Hujan (prakiraan)")
+            st.subheader(
+                "Time Series Suhu, Tutupan Awan, dan Curah Hujan (prakiraan)")
 
             fig_b, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
 
@@ -526,7 +537,8 @@ def main():
         st.subheader("Residual (Data - Simulasi)")
 
         residuals = df_sim["lux_data"].copy()
-        residuals[mask_have_data] = df_sim["lux_data"][mask_have_data] - df_sim["lux_sim"][mask_have_data]
+        residuals[mask_have_data] = df_sim["lux_data"][mask_have_data] - \
+            df_sim["lux_sim"][mask_have_data]
 
         fig5, ax5 = plt.subplots(figsize=(10, 3))
         ax5.plot(df_sim["time"][mask_have_data], residuals[mask_have_data])
